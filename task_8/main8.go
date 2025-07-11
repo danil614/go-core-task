@@ -15,10 +15,10 @@ type waitGroup struct {
 }
 
 func NewWaitGroup() WaitGroup {
-	wg := &waitGroup{
-		doneCh: make(chan struct{}),
-	}
-	return wg
+	// При нулевом счётчике канал сразу закрыт, чтобы Wait() немедленно возвращал управление
+	ch := make(chan struct{})
+	close(ch)
+	return &waitGroup{doneCh: ch}
 }
 
 func (wg *waitGroup) Add(delta int) {
@@ -27,19 +27,22 @@ func (wg *waitGroup) Add(delta int) {
 	}
 
 	wg.mu.Lock()
+	defer wg.mu.Unlock()
+
+	// Переход из 0 в >0 - создаём новый (открытый) канал
+	if wg.counter == 0 && delta > 0 {
+		wg.doneCh = make(chan struct{})
+	}
 
 	wg.counter += delta
 	if wg.counter < 0 {
 		panic("WaitGroup: negative counter")
 	}
+
 	if wg.counter == 0 {
 		// Разбудить всех, кто ждёт
 		close(wg.doneCh)
-		// doneCh надо создать заново, чтобы WG можно было использовать ещё раз
-		wg.doneCh = make(chan struct{})
 	}
-
-	wg.mu.Unlock()
 }
 
 func (wg *waitGroup) Done() {
@@ -47,5 +50,10 @@ func (wg *waitGroup) Done() {
 }
 
 func (wg *waitGroup) Wait() {
-	<-wg.doneCh
+	// Берём актуальный канал под тем же мьютексом, чтобы не было гонки
+	wg.mu.Lock()
+	ch := wg.doneCh
+	wg.mu.Unlock()
+
+	<-ch
 }
