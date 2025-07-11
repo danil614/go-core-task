@@ -97,3 +97,10 @@ func TestWaitGroup_Add_Delta0(t *testing.T) {
 		wg.Add(0)
 	})
 }
+
+func TestWaitGroup_Add_NegativeDelta(t *testing.T) {
+	wg := NewWaitGroup()
+	assert.Panics(t, func() {
+		wg.Add(-12)
+	})
+}
